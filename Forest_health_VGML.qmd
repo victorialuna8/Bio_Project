@@ -1,0 +1,348 @@
+---
+title: "Forest Health Data Analysis"
+#PROYECTO: VICTORIA GALILEA MIRANDA LUNA¡[__]
+format: html
+editor: visual
+---
+
+```{r}
+#| code-fold: true
+#| label: load-packages
+#| warning: false
+#| message: false
+
+
+library(tidyverse)
+library(ggthemes)
+library(RColorBrewer)
+library(plotly)
+library(pheatmap)
+library(corrplot)
+library(plotrix)
+library(tastypie)
+
+library(gplots)
+library(ggmosaic)
+library(treemapify)
+library(ggridges)
+library(ggalluvial)
+library(scatterPlotMatrix)
+
+library(readxl)
+library(writexl)
+
+library(kableExtra)
+library(multcomp)
+library(agricolae)
+library(factoextra)
+library(FactoMineR)
+
+```
+
+# Cargamos el conjunto de datos
+
+```{r}
+#| code-fold: true
+datos <- read_csv("C:/Users/Lenovo/Documents/bioproject/forest_health_data_with_target.csv")
+datos$Health_Status <- factor(datos$Health_Status, 
+                               levels = c("Unhealthy", "Sub-healthy", "Healthy", "Very Healthy"))
+glimpse(datos)
+
+
+```
+
+# Resumen estadístico
+
+```{r}
+#| code-fold: true
+
+summary(datos)
+
+```
+
+# Distribución de la variable categórica: `Health_Status`
+
+```{r}
+#| code-fold: true
+
+barplot <- ggplot(datos) +
+  geom_bar(aes(Health_Status, fill=Health_Status), color="yellowgreen", show.legend = FALSE) +
+  labs(
+    title = "Gráfica de barras"
+    #x = "Grupo", y = "Count",
+    #fill = " "
+  ) +
+  scale_fill_brewer(palette = "Set1")+
+  theme_bw()+
+  theme(
+    #legend.position="top",
+    #legend.position = c(.95, .95),
+    #legend.justification = c("right", "top"),
+    #legend.box.just = "right",
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13)
+  )
+
+barplot
+```
+
+# Distribución de variables cuantitativas
+
+## Gráficas de densidad
+
+```{r}
+#| code-fold: true
+
+
+num_var <- dplyr::select(datos, -Plot_ID, -Health_Status) |> names() 
+
+for (hvar in num_var) {
+grafica <- ggplot(datos)+
+      geom_density(aes(eval(as.name(hvar)), fill=Health_Status), alpha=0.3, color='gray')+ 
+        labs(x=hvar)+
+        scale_fill_brewer(palette = "Set1")+
+        theme_bw()
+        print(grafica)
+        
+}
+
+
+
+```
+
+# Correlación
+
+```{r}
+#| code-fold: true
+
+data_num <- dplyr::select(datos, -Plot_ID, -Health_Status)
+#data_num <- data_num[complete.cases(data_num), ]  
+cor_mat <- cor(data_num)
+#cor_mat
+```
+
+```{r}
+#| code-fold: true
+
+pheatmap(cor_mat)
+#corrplot(cor_mat)
+corrplot(cor_mat, method = "color")
+#corrplot(cor_mat, method = "color", order = "AOE")
+#corrplot(cor_mat, method = "color", order = "FPC", type="lower")
+```
+
+# Relación entre variables numéricas y categórica
+
+### Boxplots
+
+```{r}
+#| code-fold: true
+
+for (val_y in num_var) {
+  box_graf <- ggplot(datos)+
+    geom_boxplot(aes(x=Health_Status, y=eval(as.name(val_y)), color = Health_Status), show.legend = FALSE)+
+    geom_jitter(aes(x=Health_Status, y=eval(as.name(val_y)) ), color="yellow", alpha=0.5)+
+    stat_summary(aes(x=Health_Status, y=eval(as.name(val_y))),fun.y=mean, geom="point", shape=20, size=5, color="violet", fill="purple") +
+    labs(y=val_y)+
+    theme_bw()
+  
+  print(box_graf)
+}
+
+```
+
+# Heatmap
+
+```{r}
+#| code-fold: true
+
+
+
+data_matrix <- datos |> dplyr::select(Latitude:Fire_Risk_Index) |> as.matrix()
+dm_dim <- dim(data_matrix)
+rownames(data_matrix) <- paste("ID", 1:dm_dim[1], sep="_")
+
+
+row_annot <- dplyr::select(datos, Health_Status) |> as.data.frame()
+rownames(row_annot) <- paste("ID", 1:dm_dim[1], sep="_")
+
+
+mapa <- pheatmap(data_matrix, 
+         border_color = NA, 
+         scale = "column",
+         clustering_distance_rows = "euclidean", 
+         cutree_rows = 5,
+         treeheight_col=10,
+         clustering_distance_cols = "euclidean", 
+         clustering_method = "ward.D2", 
+         #color= hcl.colors(10, "Spectral"),
+         #breaks = c(-3, 0, 3, 6, 9, 12, 15),
+         drop_levels = TRUE,
+         show_colnames = T, 
+         show_rownames = F,
+         annotation_row = row_annot)
+         
+         #,
+         #annotation_colors = cond_color)
+
+mapa
+
+#ggsave("heatmap_1.jpg", mapa, scale=1, dpi = 320)
+```
+
+# PCA
+
+## Preparación de datos
+
+Conservar observaciones completas de las variables numéricas.
+
+```{r}
+#| code-fold: true
+
+datos_numeric <- datos |> dplyr::select(Latitude:Fire_Risk_Index)
+
+```
+
+## Resultados
+
+::: panel-tabset
+### Eigenvalores y varianzas
+
+```{r}
+#| code-fold: true
+
+
+
+PC_total <- prcomp(datos_numeric, scale.=TRUE, center=TRUE)
+
+eig_total <- get_eigenvalue(PC_total)
+eig_tabla <- data.frame(PC=paste0("PC",1:dim(eig_total)[1]), 
+                        Eigenvalor=round(eig_total$eigenvalue,3), 
+                        Varianza=round(eig_total$variance.percent,2), 
+                        Var_acu=round(eig_total$cumulative.variance.percent,2))
+
+kable(eig_tabla, align = "c", col.names = c("Componente", "Eigenvalor", "% varianza", "% varianza acumulada")) %>% kable_styling(c("striped", "hover"), full_width = F)%>% scroll_box(width="100%", height="300px", fixed_thead = TRUE)
+```
+
+### Scree plot
+
+```{r}
+#| code-fold: true
+fviz_eig(PC_total, addlabels = TRUE, color="purple")
+```
+
+### Coeficientes (Loadings)
+
+```{r}
+#| code-fold: true
+PC_coef <-data.frame(PC_total$rotation)
+kable(PC_coef, align = "c") %>% kable_styling(c("striped", "hover"), full_width = F)%>% scroll_box(width="100%", height="300px", fixed_thead = TRUE)
+```
+
+### Contribución variables
+
+```{r}
+#| code-fold: true
+fviz_pca_var(PC_total, col.var = "contrib", gradient.cols=c("#162", "#ffb600", "orange"))
+```
+
+### Contribución PC1
+
+```{r}
+#| code-fold: true
+fviz_contrib(PC_total, "var", axes = 1)
+```
+
+### Contribución PC2
+
+```{r}
+#| code-fold: true
+fviz_contrib(PC_total, "var", axes = 2)
+```
+:::
+
+## Proyecciones
+
+::: panel-tabset
+### Biplot
+
+```{r}
+#| code-fold: true
+fviz_pca_biplot(PC_total,
+                geom.ind = "point",
+                fill.ind = datos$Health_Status,
+                pointshape = 21 ,
+                pointsize = 2,
+                alpha.ind=0.6,
+                col.var = "black",
+                #palette= ,
+                label= "var",
+                repel = TRUE   
+  )
+```
+
+### Proyección
+
+```{r}
+#| code-fold: true
+proy_scores <- fviz_pca_ind(PC_total,
+             pointsize = 2,
+             habillage =datos$Health_Status,
+             #addEllipses = TRUE,
+             label= "var",
+            repel = TRUE 
+  )
+
+ggplotly(proy_scores)
+```
+:::
+
+# LDA
+
+```{r}
+#| code-fold: true
+
+data_lda <- datos |> dplyr::select(-Plot_ID)
+
+lda_tx <- lda(Health_Status~.,data=data_lda)
+lda_coef <- data.frame(varnames=rownames(coef(lda_tx)), coef(lda_tx))
+#lda_coef$valor <- gsub("<", "", datos_prev_num$valor)
+prediction_group <- lda_tx |> predict(data_lda)
+lda_acc <-  mean(prediction_group$class==unname(as_vector(data_lda$Health_Status))) 
+lda_data <- cbind(data_lda, prediction_group$x, prediction_group$posterior, pred_group= prediction_group$class)
+
+```
+
+```{r}
+#| code-fold: true
+
+lda_data_graf <- lda_data
+lda_plot <- ggplot(lda_data_graf, aes(x=LD1, y=LD2))+
+    geom_point(aes(fill=Health_Status), shape=21, color="black", size=5)+
+  #  scale_fill_manual(values = my_colors)+
+    theme_light()+
+  #geom_text(data=data.scores,aes(x=NMDS1,y=NMDS2,label=site),size=6,vjust=0) + 
+  scale_fill_manual(values=c("Unhealthy"="blue","Sub-healthy"="violet", "Healthy" = "yellowgreen", "Very Healthy"="deeppink"))+
+  labs(x= "LD1", 
+       y= "LD2", fill=" ")+
+    #theme_bw()+
+    theme(
+      plot.title = element_text(size=14),
+      axis.text.x=element_text(size=14),
+      axis.text.y=element_text(size=14),
+      axis.title.x = element_text(face="bold", size=15),
+      axis.title.y = element_text(face="bold", size=15),
+      legend.text = element_text(size=15),
+      legend.background  = element_rect(colour = "transparent", fill = "transparent")
+    )
+
+ggplotly(lda_plot)
+
+
+```
